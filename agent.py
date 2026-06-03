@@ -3,19 +3,19 @@
 Job Agent — Run: python3 agent.py
 ─────────────────────────────────────────────────────────────────────────────
 Searches UK charity job boards, generates a daily digest + cover letters,
-and emails everything to your inbox.
+writes every job to your Google Sheet, and emails the digest to your inbox.
 
 Quick setup:
-  1. Copy .env.example → .env and fill in your two keys
+  1. Copy .env.example → .env and fill in your keys
   2. Run:  python3 agent.py
-  3. Check your email  alinafemaliro@gmail.com
 
-For hands-free daily runs (no PC needed):
-  Push this folder to GitHub — see .github/workflows/daily.yml
+Google Sheet:  see .env.example Step 3 for setup (5 minutes)
+Auto daily:    push to GitHub — see .github/workflows/daily.yml
 ─────────────────────────────────────────────────────────────────────────────
 """
 
 import glob
+import json
 import os
 import re
 import smtplib
@@ -28,41 +28,32 @@ import anthropic
 from dotenv import load_dotenv
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 1 — SECRETS & PATHS
-# Edit the .env file, not this section.
+# SECTION 1 — SECRETS  (edit .env, not this file)
 # ─────────────────────────────────────────────────────────────────────────────
 
 load_dotenv()
 
-ANTHROPIC_API_KEY  = os.getenv("ANTHROPIC_API_KEY", "")
-GMAIL_ADDRESS      = os.getenv("GMAIL_ADDRESS", "alinafemaliro@gmail.com")
-GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
-EMAIL_TO           = os.getenv("EMAIL_TO", "alinafemaliro@gmail.com")
+ANTHROPIC_API_KEY           = os.getenv("ANTHROPIC_API_KEY", "")
+GMAIL_ADDRESS               = os.getenv("GMAIL_ADDRESS", "alinafemaliro@gmail.com")
+GMAIL_APP_PASSWORD          = os.getenv("GMAIL_APP_PASSWORD", "")
+EMAIL_TO                    = os.getenv("EMAIL_TO", "alinafemaliro@gmail.com")
+GOOGLE_SHEET_ID             = os.getenv("GOOGLE_SHEET_ID", "")
+GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 
 BASE  = Path(__file__).parent
 TODAY = date.today().isoformat()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 2 — SETTINGS
-# Edit these values to change how the agent behaves.
+# SECTION 2 — SETTINGS  (edit freely)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Claude model — opus is most capable; sonnet is faster and cheaper
+# Claude model to use
 CLAUDE_MODEL = "claude-opus-4-8"
 
-# How many cover letters to write per run (top N roles)
+# Number of cover letters per run
 TOP_N = 5
 
-# Job boards to include in each search
-JOB_BOARDS = [
-    "charityjob.co.uk",
-    "reed.co.uk",
-    "linkedin.com/jobs",
-    "indeed.co.uk",
-    "jobs.theguardian.com",
-]
-
-# Search terms — add or remove lines to change what gets searched
+# Job search queries — add or remove lines to change what gets searched
 SEARCH_QUERIES = [
     "charityjob.co.uk finance officer UK charity 2026",
     "charityjob.co.uk finance assistant operations coordinator charity UK",
@@ -75,7 +66,6 @@ SEARCH_QUERIES = [
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 3 — FILE HELPERS
-# Internal functions — you don't need to edit this section.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def read(path: Path) -> str:
@@ -89,19 +79,16 @@ def save(path: Path, content: str) -> None:
 
 
 def prior_digests() -> str:
-    """Return last 14 digests joined — used to avoid repeating roles."""
+    """Last 14 digests — used to avoid repeating roles."""
     files = sorted(glob.glob(str(BASE / "digests" / "*.md")))
     return "\n\n---\n\n".join(read(Path(f)) for f in files[-14:])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 4 — JOB SEARCH
-# Uses DuckDuckGo to pull live job listings from UK job boards.
-# No API key needed. Results are passed to Claude in Section 5.
+# SECTION 4 — JOB SEARCH  (DuckDuckGo — free, no API key)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def search_jobs() -> str:
-    """Search UK job boards via DuckDuckGo. Returns combined snippet text."""
     try:
         from duckduckgo_search import DDGS
     except ImportError:
@@ -125,8 +112,6 @@ def search_jobs() -> str:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 5 — CLAUDE GENERATION
-# Passes the search results + your profile to Claude.
-# Claude produces the digest and cover letters.
 # ─────────────────────────────────────────────────────────────────────────────
 
 CLAUDE_SYSTEM = """\
@@ -134,35 +119,60 @@ You are Emmanuel Alinafe Maliro's automated job-hunting assistant.
 Today is {today}. You have been given real web search results from UK job boards.
 
 YOUR TASK
-1. From the search results, identify the best matching UK roles that fit the
-   candidate's profile and targets (Finance/Operations, M&E/Grants, Data/Research).
-2. Write a morning digest in exactly the same format as the previous digests.
-3. Write a tailored 250-350 word cover letter for each of the top {n} roles.
+1. Identify the best matching UK roles from the search results.
+2. Write a morning digest in markdown (same format as previous digests).
+3. Output a JSON array with one object per top role (for the Google Sheet).
+4. Write a 250-350 word cover letter for each of the top {n} roles.
+
+CV VERSIONS — use these exact IDs in the cv_version field of the JSON:
+  Emmanuel_Maliro_v1_Finance     → finance officer, finance assistant, accounts assistant,
+                                    operations coordinator, grants finance, ACCA trainee,
+                                    finance administrator, bookkeeper, finance manager
+  Emmanuel_Maliro_v2_Programmes  → M&E officer, MEAL officer, programmes officer,
+                                    programme coordinator, grants officer, impact analyst,
+                                    research associate, learning officer, programme manager
+  Emmanuel_Maliro_v3_Data        → data analyst, research analyst, data officer,
+                                    BI analyst, reporting analyst, data coordinator,
+                                    insights analyst, junior data analyst
 
 RULES
 - Only include roles found in the search results. Never invent listings.
-- Skip any role already in the previous digests (shown in the user message).
-- Follow the profile.md cover letter tone and targets.md rules exactly.
-- Salary floor: £25,000. Skip roles below this unless they are ACCA trainee schemes.
+- Skip roles already listed in previous digests.
+- Salary floor: £25,000. Skip roles below this unless ACCA trainee scheme.
 
-OUTPUT — use these exact delimiters, no exceptions:
+OUTPUT — output ALL four sections below, in this exact order:
 
 === DIGEST START ===
 [full digest in markdown, same format as previous digests]
 === DIGEST END ===
 
-=== COVER: <role-slug> START ===
+=== JOBS JSON START ===
+[
+  {{
+    "title": "Exact Job Title",
+    "employer": "Organisation Name",
+    "location": "City (Remote/Hybrid/On-site)",
+    "salary": "£XX,XXX",
+    "deadline": "YYYY-MM-DD or 'verify on listing'",
+    "link": "https://full-url-to-apply",
+    "cv_version": "Emmanuel_Maliro_v1_Finance",
+    "key_points": "1. [Specific JD requirement matched to your experience]\\n2. [Second tailoring point]\\n3. [Third tailoring point]",
+    "cover_letter_slug": "slug-matching-the-cover-letter-below"
+  }}
+]
+=== JOBS JSON END ===
+
+=== COVER: cover-letter-slug START ===
 [cover letter 250-350 words]
-=== COVER: <role-slug> END ===
+=== COVER: cover-letter-slug END ===
 """
 
 
 def generate(search_results: str) -> str:
-    """Call Claude API with search results + profile, return raw output."""
     if not ANTHROPIC_API_KEY:
         raise RuntimeError(
             "ANTHROPIC_API_KEY not set.\n"
-            "  → Copy .env.example to .env and add your key from console.anthropic.com"
+            "  → Add your key to .env (get it from console.anthropic.com)"
         )
 
     profile  = read(BASE / "profile.md")
@@ -170,7 +180,7 @@ def generate(search_results: str) -> str:
     prev     = prior_digests()
     system   = CLAUDE_SYSTEM.format(today=TODAY, n=TOP_N)
 
-    user_msg = f"""Today is {TODAY}. Generate the digest and {TOP_N} cover letters.
+    user_msg = f"""Today is {TODAY}. Generate the digest, JSON, and {TOP_N} cover letters.
 
 === CANDIDATE PROFILE ===
 {profile}
@@ -181,63 +191,116 @@ def generate(search_results: str) -> str:
 === TODAY'S JOB BOARD SEARCH RESULTS ===
 {search_results}
 
-=== PREVIOUS DIGESTS — skip these roles, do NOT repeat them ===
-{prev[-5000:] if prev else "None yet — this is the first run."}
+=== PREVIOUS DIGESTS — skip these roles ===
+{prev[-5000:] if prev else "None yet — first run."}
 """
 
     client   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     response = client.messages.create(
-        model    = CLAUDE_MODEL,
+        model      = CLAUDE_MODEL,
         max_tokens = 8192,
-        system   = system,
-        messages = [{"role": "user", "content": user_msg}],
+        system     = system,
+        messages   = [{"role": "user", "content": user_msg}],
     )
     return response.content[0].text
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 6 — PARSE OUTPUT
-# Splits Claude's output into the digest and individual cover letters.
 # ─────────────────────────────────────────────────────────────────────────────
 
-def parse(output: str) -> tuple[str, dict[str, str]]:
-    """Extract digest and cover letters from Claude's delimited output."""
+def parse(output: str) -> tuple[str, list[dict], dict[str, str]]:
+    """
+    Returns:
+      digest      — markdown string
+      jobs        — list of job dicts (from JSON block)
+      covers      — {slug: cover_letter_text}
+    """
+    # ── Digest ────────────────────────────────────────────────────────────────
     digest = ""
-    covers: dict[str, str] = {}
-
     m = re.search(r"=== DIGEST START ===(.*?)=== DIGEST END ===", output, re.DOTALL)
     if m:
         digest = m.group(1).strip()
 
+    # ── Jobs JSON ─────────────────────────────────────────────────────────────
+    jobs: list[dict] = []
+    m = re.search(r"=== JOBS JSON START ===(.*?)=== JOBS JSON END ===", output, re.DOTALL)
+    if m:
+        try:
+            jobs = json.loads(m.group(1).strip())
+        except json.JSONDecodeError as e:
+            print(f"  ⚠  Could not parse jobs JSON: {e}")
+
+    # ── Cover letters ─────────────────────────────────────────────────────────
+    covers: dict[str, str] = {}
     for m in re.finditer(
         r"=== COVER: (.+?) START ===(.*?)=== COVER: \1 END ===", output, re.DOTALL
     ):
         covers[m.group(1).strip()] = m.group(2).strip()
 
-    return digest, covers
+    # Attach full cover letter text to each job dict
+    for job in jobs:
+        slug = job.get("cover_letter_slug", "")
+        if slug in covers:
+            job["cover_letter"] = covers[slug]
+
+    return digest, jobs, covers
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 7 — EMAIL
-# Sends the digest to your Gmail inbox.
-# Requires GMAIL_APP_PASSWORD in your .env file (see .env.example).
+# SECTION 7 — GOOGLE SHEETS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def write_to_sheet(jobs: list[dict]) -> str:
+    """Write jobs to Google Sheet. Returns sheet URL or empty string if not configured."""
+    if not GOOGLE_SHEET_ID:
+        print("  ℹ  GOOGLE_SHEET_ID not set — skipping Google Sheet.")
+        print("     See .env.example Step 3 to enable this feature.")
+        return ""
+
+    try:
+        from sheets import setup_headers, get_existing_links, append_jobs, sheet_url
+
+        setup_headers(GOOGLE_SHEET_ID)
+        existing = get_existing_links(GOOGLE_SHEET_ID)
+        new_jobs = [j for j in jobs if j.get("link", "") not in existing]
+
+        if not new_jobs:
+            print("  ℹ  All jobs already in Google Sheet — nothing to add.")
+            return sheet_url(GOOGLE_SHEET_ID)
+
+        n = append_jobs(GOOGLE_SHEET_ID, new_jobs)
+        print(f"  ✅ {n} new row(s) added to Google Sheet")
+        return sheet_url(GOOGLE_SHEET_ID)
+
+    except Exception as e:
+        print(f"  ⚠  Google Sheets error: {e}")
+        return ""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 8 — EMAIL
 # ─────────────────────────────────────────────────────────────────────────────
 
 EMAIL_HTML = """\
 <!doctype html>
 <html>
-<body style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;
+<body style="font-family:Arial,sans-serif;max-width:700px;margin:0 auto;
              padding:24px;color:#222">
 
 <h2 style="color:#1a56a0;border-bottom:2px solid #1a56a0;padding-bottom:8px">
   Daily Job Digest — {date}
 </h2>
 
-<p>
-  Your job agent has finished today's search.<br>
-  <strong>{n_covers} cover letter(s)</strong> are ready in
-  <code>cv-variants/</code>.
-</p>
+<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+  <tr>
+    <td style="padding:8px 12px;background:#f0f4fa;border-radius:6px;font-size:14px">
+      📋 <strong>{n_jobs} jobs</strong> added to your Google Sheet today<br>
+      📝 <strong>{n_covers} cover letters</strong> saved to <code>cv-variants/</code><br>
+      {sheet_link}
+    </td>
+  </tr>
+</table>
 
 <div style="background:#f5f7fa;border:1px solid #dde3ec;border-radius:6px;
             padding:20px;margin:20px 0;overflow-x:auto">
@@ -256,19 +319,27 @@ EMAIL_HTML = """\
 """
 
 
-def send_email(digest: str, n_covers: int) -> None:
-    """Send the digest to EMAIL_TO via Gmail SMTP."""
+def send_email(digest: str, n_jobs: int, n_covers: int, sheet_url: str) -> None:
     if not GMAIL_APP_PASSWORD:
         print("  ⚠  GMAIL_APP_PASSWORD not set — skipping email.")
-        print("     Add it to .env (see .env.example for instructions).")
         return
 
+    sheet_link = (
+        f'🔗 <a href="{sheet_url}" style="color:#1a56a0">Open Google Sheet</a>'
+        if sheet_url else
+        "💡 Add GOOGLE_SHEET_ID to .env to enable the Google Sheet."
+    )
+
     msg            = MIMEMultipart("alternative")
-    msg["Subject"] = f"Job Digest — {TODAY}  ({n_covers} cover letters ready)"
+    msg["Subject"] = f"Job Digest — {TODAY}  ({n_jobs} new jobs · {n_covers} cover letters)"
     msg["From"]    = GMAIL_ADDRESS
     msg["To"]      = EMAIL_TO
 
-    html = EMAIL_HTML.format(date=TODAY, digest=digest, n_covers=n_covers)
+    html = EMAIL_HTML.format(
+        date=TODAY, digest=digest,
+        n_jobs=n_jobs, n_covers=n_covers,
+        sheet_link=sheet_link,
+    )
     msg.attach(MIMEText(digest, "plain"))
     msg.attach(MIMEText(html,  "html"))
 
@@ -280,45 +351,52 @@ def send_email(digest: str, n_covers: int) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 8 — MAIN
-# This is the entry point. Run:  python3 agent.py
+# SECTION 9 — MAIN
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    print(f"\n{'═' * 58}")
+    print(f"\n{'═' * 60}")
     print(f"  JOB AGENT  ·  {TODAY}  ·  {datetime.now().strftime('%H:%M:%S')}")
-    print(f"{'═' * 58}\n")
+    print(f"{'═' * 60}\n")
 
-    # ── Step 1 — Search job boards ────────────────────────────────────────────
-    print("Step 1 / 4  →  searching job boards …")
+    # Step 1 — Search job boards
+    print("Step 1 / 5  →  searching job boards …")
     search_results = search_jobs()
 
-    # ── Step 2 — Generate digest + cover letters ──────────────────────────────
-    print("\nStep 2 / 4  →  generating digest + cover letters (takes ~60 sec) …")
+    # Step 2 — Generate digest, JSON, and cover letters via Claude
+    print("\nStep 2 / 5  →  generating digest + cover letters (~60 sec) …")
     raw = generate(search_results)
 
-    # ── Step 3 — Parse and save ───────────────────────────────────────────────
-    print("\nStep 3 / 4  →  saving files …")
-    digest, covers = parse(raw)
+    # Step 3 — Parse output
+    print("\nStep 3 / 5  →  parsing output …")
+    digest, jobs, covers = parse(raw)
 
     if not digest:
-        print("  ⚠  digest delimiters not found — saving raw output as digest")
+        print("  ⚠  digest delimiters not found — saving raw output")
         digest = raw
 
+    print(f"  → {len(jobs)} jobs in JSON  ·  {len(covers)} cover letters")
+
+    # Step 4 — Save files
+    print("\nStep 4 / 5  →  saving files …")
     save(BASE / "digests"     / f"{TODAY}-digest.md", digest)
     for slug, text in covers.items():
         save(BASE / "cv-variants" / f"{TODAY}_{slug}_cover.md", text)
 
-    # ── Step 4 — Email ────────────────────────────────────────────────────────
-    print("\nStep 4 / 4  →  sending email …")
-    send_email(digest, len(covers))
+    # Step 5 — Google Sheet + email
+    print("\nStep 5 / 5  →  Google Sheet + email …")
+    url = write_to_sheet(jobs)
+    send_email(digest, len(jobs), len(covers), url)
 
-    # ── Done ──────────────────────────────────────────────────────────────────
-    print(f"\n{'═' * 58}")
-    print(f"  DONE  ·  {len(covers)} cover letters written")
-    print(f"        ·  digest emailed to {EMAIL_TO}")
-    print(f"        ·  {datetime.now().strftime('%H:%M:%S')}")
-    print(f"{'═' * 58}\n")
+    print(f"\n{'═' * 60}")
+    print(f"  DONE")
+    print(f"  • {len(jobs)} jobs written to Google Sheet")
+    print(f"  • {len(covers)} cover letters saved")
+    print(f"  • digest emailed to {EMAIL_TO}")
+    if url:
+        print(f"  • sheet: {url}")
+    print(f"  • {datetime.now().strftime('%H:%M:%S')}")
+    print(f"{'═' * 60}\n")
 
 
 if __name__ == "__main__":
