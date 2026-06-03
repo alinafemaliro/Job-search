@@ -1,0 +1,12 @@
+# Secrets — never upload these to GitHub
+.env
+*.env
+
+# Mac OS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python

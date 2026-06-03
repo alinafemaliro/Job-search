@@ -1,0 +1,6 @@
+# Job Agent — Python dependencies
+# Install: pip3 install -r requirements.txt --break-system-packages
+
+anthropic>=0.105.0
+duckduckgo-search>=8.0.0
+python-dotenv>=1.0.0

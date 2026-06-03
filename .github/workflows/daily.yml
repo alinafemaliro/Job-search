@@ -1,0 +1,77 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# GitHub Actions — Daily Job Agent
+# ─────────────────────────────────────────────────────────────────────────────
+# This runs the job agent every weekday morning WITHOUT your PC being on.
+# GitHub runs it in the cloud for free.
+#
+# HOW TO SET THIS UP (one-time, 10 minutes):
+#
+#   1. Create a free GitHub account at  https://github.com
+#
+#   2. Create a new PRIVATE repository called  job-agent
+#      (private = only you can see it)
+#
+#   3. Push this folder to GitHub:
+#        git init
+#        git add .
+#        git commit -m "initial"
+#        git branch -M main
+#        git remote add origin https://github.com/YOUR-USERNAME/job-agent.git
+#        git push -u origin main
+#
+#   4. Add your secrets to GitHub (Settings → Secrets → Actions → New secret):
+#        ANTHROPIC_API_KEY    ← your Anthropic key
+#        GMAIL_ADDRESS        ← alinafemaliro@gmail.com
+#        GMAIL_APP_PASSWORD   ← your 16-char Gmail App Password
+#        EMAIL_TO             ← alinafemaliro@gmail.com
+#
+#   5. That's it. GitHub will run the agent every weekday at 7 AM UK time.
+#      You'll receive an email every morning with new job listings.
+#      You can also click "Run workflow" on GitHub to trigger it manually.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Daily Job Digest
+
+on:
+  schedule:
+    # Runs at 2:00 AM UTC = 3:00 AM UK time (BST summer)
+    # Change to "0 3" in winter (GMT = UTC, so 3:00 UTC)
+    - cron: "0 2 * * 1-5"   # Monday to Friday only
+
+  # Also lets you run it manually from the GitHub website
+  workflow_dispatch:
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write          # needed to commit digest + cover letter files back
+
+    steps:
+
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run job agent
+        env:
+          ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
+          GMAIL_ADDRESS:      ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_TO:           ${{ secrets.EMAIL_TO }}
+        run: python agent.py
+
+      - name: Commit new digest and cover letters
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "Job Agent Bot"
+          git add digests/ cv-variants/ applied-log/
+          git diff --staged --quiet || git commit -m "job-agent: digest $(date +%Y-%m-%d)"
+          git push
