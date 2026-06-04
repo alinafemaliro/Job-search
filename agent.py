@@ -85,29 +85,12 @@ def prior_digests() -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 4 — JOB SEARCH  (DuckDuckGo — free, no API key)
+# SECTION 4 — JOB SEARCH  (scrapes CharityJob directly — no API key needed)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def search_jobs() -> str:
-    try:
-        from duckduckgo_search import DDGS
-    except ImportError:
-        return "[duckduckgo-search not installed — run: pip3 install duckduckgo-search]"
-
-    all_results: list[str] = []
-    with DDGS() as ddgs:
-        for query in SEARCH_QUERIES:
-            print(f"     🔍 {query[:70]}")
-            try:
-                hits = list(ddgs.text(query, max_results=12, region="uk-en"))
-                block = f"\n### Search: {query}\n" + "\n".join(
-                    f"- [{h['title']}]({h['href']})\n  {h['body']}" for h in hits
-                )
-                all_results.append(block)
-            except Exception as e:
-                all_results.append(f"\n### Search: {query}\n[Error: {e}]")
-
-    return "\n\n".join(all_results)
+    from scraper import scrape_all
+    return scrape_all()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
