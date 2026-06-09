@@ -9,3 +9,6 @@ google-auth>=2.0.0
 google-api-python-client>=2.0.0
 beautifulsoup4>=4.12.0
 requests>=2.31.0
+
+# Business Opportunity Finder (biz_agent.py)
+# Uses the same anthropic + beautifulsoup4 + requests — no extra installs needed

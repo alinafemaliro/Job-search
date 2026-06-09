@@ -1,0 +1,98 @@
+[
+  {
+    "name": "Turnkey Online Wholesale Business",
+    "price": 12000,
+    "price_str": "\u00a312,000",
+    "location": "Wisbech, Cambridgeshire",
+    "turnover": "\u00a3145,000",
+    "type": "online wholesale / e-commerce",
+    "passive_score": 6,
+    "value_score": 9,
+    "overall_score": 8,
+    "link": "https://www.rightbiz.co.uk/buy_business/for_sale/606430_cambridgeshire.html"
+  },
+  {
+    "name": "Recovery and Car Transport Business",
+    "price": 15000,
+    "price_str": "\u00a315,000",
+    "location": "Relocatable to UK",
+    "turnover": "\u00a3100,000",
+    "type": "service / logistics",
+    "passive_score": 5,
+    "value_score": 9,
+    "overall_score": 8,
+    "link": "https://www.rightbiz.co.uk/buy_business/for_sale/638133_relocatable.html"
+  },
+  {
+    "name": "Garden Pond Maintenance & Installation",
+    "price": 25000,
+    "price_str": "\u00a325,000",
+    "location": "Somerset",
+    "turnover": "\u00a383,822",
+    "type": "service / recurring maintenance",
+    "passive_score": 6,
+    "value_score": 8,
+    "overall_score": 7,
+    "link": "https://www.rightbiz.co.uk/buy_business/for_sale/652140_somerset.html"
+  },
+  {
+    "name": "Specialist Online Retailer - Bird & Reptile",
+    "price": 15000,
+    "price_str": "\u00a315,000",
+    "location": "Norfolk",
+    "turnover": "\u00a3109,813",
+    "type": "e-commerce (niche)",
+    "passive_score": 8,
+    "value_score": 7,
+    "overall_score": 7,
+    "link": "https://www.daltonsbusiness.com/listing/specialist-online-retailer-for-bird-for-sale-DB2485439/"
+  },
+  {
+    "name": "Multi-Channel E-commerce (Etsy/Amazon/eBay)",
+    "price": 5000,
+    "price_str": "\u00a35,000",
+    "location": "Relocatable to UK",
+    "turnover": "\u00a330,000",
+    "type": "e-commerce (multi-marketplace)",
+    "passive_score": 8,
+    "value_score": 7,
+    "overall_score": 7,
+    "link": "https://www.rightbiz.co.uk/buy_business/for_sale/627321_relocatable.html"
+  },
+  {
+    "name": "Mobile Solar Panel Cleaning Service",
+    "price": 15000,
+    "price_str": "\u00a315,000",
+    "location": "Derbyshire",
+    "turnover": "\u00a320,000",
+    "type": "service (mobile)",
+    "passive_score": 5,
+    "value_score": 6,
+    "overall_score": 6,
+    "link": "https://www.rightbiz.co.uk/buy_business/for_sale/651974_derbyshire.html"
+  },
+  {
+    "name": "Greensleeves Lawn Care Franchise Resale",
+    "price": 9995,
+    "price_str": "\u00a39,995",
+    "location": "Ashford, Kent",
+    "turnover": "not stated",
+    "type": "franchise (lawn care)",
+    "passive_score": 6,
+    "value_score": 6,
+    "overall_score": 6,
+    "link": "https://www.daltonsbusiness.com/listing/franchise-for-sale-greensleeves-DB2065774/"
+  },
+  {
+    "name": "The Pod Collective Podcast/Content Franchise",
+    "price": 20000,
+    "price_str": "\u00a320,000",
+    "location": "York, North Yorkshire",
+    "turnover": "not stated",
+    "type": "franchise (digital/content)",
+    "passive_score": 6,
+    "value_score": 5,
+    "overall_score": 6,
+    "link": "https://www.rightbiz.co.uk/buy_business/for_sale/652090_north_yorkshire.html"
+  }
+]
